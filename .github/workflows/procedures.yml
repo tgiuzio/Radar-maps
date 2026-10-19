@@ -1,0 +1,46 @@
+name: Procedures pack
+
+# Keeps procs.bin in the latest release on the FAA CIFP cycle in effect
+# (every 28 days): scripts/update_procedures.py checks daily and only builds
+# and uploads when a new cycle has taken effect. Uses the workflow's own
+# token, which may edit this repository's releases: no secret needed.
+
+on:
+  schedule:
+    - cron: "17 7 * * *"  # daily, 07:17 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if the published cycle is current
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  procedures:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Update procs.bin if a new CIFP cycle is in effect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAPS_REPO: ${{ github.repository }}
+        run: python3 scripts/update_procedures.py ${{ inputs.force && '--force' || '' }}
+
+      # A commit each cycle (28 days) keeps GitHub from pausing the schedule,
+      # which it does after 60 days without activity in a public repository.
+      - name: Record the cycle
+        run: |
+          if [ -n "$(git status --porcelain CIFP_CYCLE)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "CIFP cycle $(cut -d' ' -f1 CIFP_CYCLE)" CIFP_CYCLE
+            git push
+          fi
